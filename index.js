@@ -6,8 +6,8 @@ const path = require('path');
 if (!fs.existsSync('./config.json')) {
     const defaultConfig = {
         botName: "Tusher Custom Bot",
-        prefix: "!",
-        adminID: ["10008823902910"],
+        prefix: "/",
+        adminID: ["61591564637714"],
         groupOnly: false
     };
     fs.writeFileSync('./config.json', JSON.stringify(defaultConfig, null, 2));
@@ -15,17 +15,17 @@ if (!fs.existsSync('./config.json')) {
 }
 const config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
-// ২. স্বয়ংক্রিয়ভাবে খালি appstate.json তৈরি (যদি না থাকে)
+// ২. স্বয়ংক্রিয়ভাবে খালি appstate.json তৈরি
 if (!fs.existsSync('./appstate.json')) {
     fs.writeFileSync('./appstate.json', JSON.stringify([], null, 2));
-    console.log("⚠️ appstate.json ছিল না! নতুন খালি তৈরি হয়েছে। অনুগ্রহ করে এতে তোমার ফেসবুক AppState/Cookies পেস্ট করো।");
+    console.log("⚠️ appstate.json ছিল না! নতুন খালি তৈরি হয়েছে।");
     process.exit(1);
 }
 
 // ৩. AppState চেক
 const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
 if (!Array.isArray(appState) || appState.length === 0) {
-    console.error("❌ appstate.json খালি! Kiwi Browser থেকে AppState এক্সপোর্ট করে 'nano appstate.json' দিয়ে পেস্ট করো।");
+    console.error("❌ appstate.json খালি!");
     process.exit(1);
 }
 
@@ -60,34 +60,38 @@ console.log("🔄 ব্রাউজার সেশন দিয়ে ফেস�
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ হয়েছে! AppState পরিবর্তন করো:", err);
 
-    // 🟢 কানেক্ট হওয়ার মেসেজ কনসোলে দেখাবে
     console.log("✅ Bot is connected!");
     console.log(`🚀 ${config.botName} সফলভাবে চালুর জন্য প্রস্তুত!`);
 
-    // (ঐচ্ছিক) বট কানেক্ট হলে অ্যাডমিনের ইনবক্সে মেসেজ পাঠাবে
-    if (config.adminID && config.adminID.length > 0) {
-        const firstAdmin = config.adminID[0];
-        api.sendMessage("🟢 Bot is connected and running successfully!", firstAdmin, (msgErr) => {
-            if (!msgErr) console.log("📩 অ্যাডমিনকে কানেকশন নোটিফিকেশন পাঠানো হয়েছে।");
-        });
-    }
-
+    // বটের প্রয়োজনীয় সেটিং সেট করা
     api.setOptions({
         listenEvents: true,
         selfListen: false,
-        autoMarkDelivery: true,
-        online: true
+        autoMarkDelivery: false,
+        autoMarkRead: true,
+        listenTyping: false,
+        updatePresence: true,
+        forceLogin: true
     });
 
-    api.listenMqtt((listenErr, event) => {
-        if (listenErr) return;
+    // 🟢 মেসেজ লিসেনার (নতুন সংশোধিত নিয়ম)
+    const listenEmitter = api.listenMqtt((listenErr, event) => {
+        if (listenErr) {
+            console.error("❌ Mqtt Listen Error:", listenErr);
+            return;
+        }
 
+        // মেসেজ আসলে তা কনসোলে দেখাবে (টার্মিনালে এসএমএস দেখার জন্য)
         if (event.type === "message" || event.type === "message_reply") {
             const body = event.body ? event.body.trim() : "";
+            const senderID = event.senderID;
             
+            console.log(`📩 নতুন মেসেজ এসেছে [ID: ${senderID}]: ${body}`);
+
             // groupOnly ফিল্টার চেক
             if (config.groupOnly && !event.isGroup) return;
 
+            // প্রিফিক্স (! বা অন্য কিছু) না থাকলে রেসপন্স করবে না
             if (!body.startsWith(config.prefix)) return;
 
             const args = body.slice(config.prefix.length).trim().split(/ +/);
@@ -98,10 +102,10 @@ login({ appState }, (err, api) => {
                 try {
                     command.onStart({ api, event, args });
                 } catch (cmdErr) {
-                    api.sendMessage(`❌ কমান্ড রান এরর: ${cmdErr.message}`, event.threadID);
+                    api.sendMessage({ body: `❌ কমান্ড রান এরর: ${cmdErr.message}` }, event.threadID, event.messageID);
                 }
             } else {
-                api.sendMessage(`❌ "${cmdName}" নামে কোনো কমান্ড নেই। সকল কমান্ড দেখতে ${config.prefix}help টাইপ করো।`, event.threadID);
+                api.sendMessage({ body: `❌ "${cmdName}" নামে কোনো কমান্ড নেই। সকল কমান্ড দেখতে ${config.prefix}help টাইপ করো।` }, event.threadID, event.messageID);
             }
         }
     });
