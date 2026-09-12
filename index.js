@@ -5,7 +5,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // 🔑 আপনার Gemini API Key এখানে দিন
 const genAI = new GoogleGenerativeAI("AQ.Ab8RN6Legf-naM51bsKHrGiqVMjZRKwYecUzEdtyKdjGpwxrbw");
-const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const aiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const dbPath = path.join(__dirname, 'database.json');
 if (!fs.existsSync(dbPath)) {
@@ -40,23 +40,33 @@ function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID = nul
     }, typingTime);
 }
 
-// 🤖 AI প্রম্পট (অ্যাডমিনের কথা শোনা ও অন্যকে জ্বালাতন করার লজিক)
+// 🤖 উন্নত Gemini AI হ্যান্ডলার
 async function askAI(userMessage, targetName = "", mode = "normal") {
     try {
         let prompt = "";
         
         if (mode === "roast") {
             prompt = `তুমি তুষার (অ্যাডমিন)-এর বিশ্বস্ত রোবট বন্ধু। তুষার তোমাকে আদেশ দিয়েছে "${targetName}" নামের ফ্রেন্ডকে একটু জ্বালাতন বা পঁচাতে। 
-তুমি "${targetName}"-কে উদ্দেশ্য করে ১-২ লাইনে খুব মজার এবং হালকা ফানি পঁচানি দাও (কোনো গালিগালাজ বা খারাপ ভাষা ব্যবহার করবে না, কিন্তু যেন পঁচানো হয়)।`;
+তুমি "${targetName}"-কে উদ্দেশ্য করে ১-২ লাইনে খুব মজার এবং হালকা ফানি পঁচানি দাও (কোনো গালিগালাজ বা খারাপ ভাষা ব্যবহার করবে না)।`;
         } else {
-            prompt = `তুমি তুষারের তৈরি করা একজন সাধারণ বন্ধু। বন্ধুদের সাথে স্বাভাবিক ১ লাইনের চ্যাট করো। 
+            prompt = `তুমি একজন সাধারণ বাংলাদেশী ছেলে। তোমার নাম তুষার। তুমি মেসেঞ্জারে বন্ধুদের সাথে চ্যাট করছ। 
+নিয়ম: একদম ছোট ১ লাইনের উত্তর দেবে। সাধারণ বন্ধুদের চ্যাটিং স্টাইলে লিখবে।
 মেসেজ: "${userMessage}"`;
         }
 
         const result = await aiModel.generateContent(prompt);
         return result.response.text().trim();
     } catch (err) {
-        return "ধুর ভাই, এখন মেজাজ খারাপ! পরে কথা বলি।";
+        console.log("❌ Gemini AI Error:", err.message);
+        
+        // AI ফেল করলে ডাটাবেজ থেকে র্যান্ডম যেকোনো একটা সাধারণ মানুষের উত্তর দেওয়া
+        const fallbackReplies = [
+            "হুম বলো, শুনছি।",
+            "কী খবর ভাই?",
+            "বুঝলাম না, আবার বলো তো?",
+            "আহা ভাই একটু ব্যস্ত ছিলাম!"
+        ];
+        return fallbackReplies[Math.floor(Math.random() * fallbackReplies.length)];
     }
 }
 
