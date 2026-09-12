@@ -1,6 +1,11 @@
 const login = require('mahmud-fca');
 const fs = require('fs');
 const path = require('path');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+// 🔑 আপনার Gemini API Key এখানে দিন
+const genAI = new GoogleGenerativeAI("AQ.Ab8RN6Legf-naM51bsKHrGiqVMjZRKwYecUzEdtyKdjGpwxrbw");
+const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const dbPath = path.join(__dirname, 'database.json');
 if (!fs.existsSync(dbPath)) {
@@ -10,7 +15,7 @@ if (!fs.existsSync(dbPath)) {
 const config = { 
     botName: "Tusher AI", 
     prefix: "@M Tusher Khan",
-    adminID: ["61591564637714"]
+    adminID: ["61591564637714"] // আপনার ফেসবুক আইডির সঠিক UID দিন
 };
 
 const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
@@ -18,34 +23,49 @@ const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
 process.on('unhandledRejection', (reason) => console.log('⚠️ Ignored:', reason?.message || reason));
 process.on('uncaughtException', (err) => console.log('⚠️ Ignored:', err?.message || err));
 
-const badWords = ["অহ তাই", "ওহ", "হুম", "ok", "hmm", "আহা", "হায়", "হ্যাঁ", "না"];
-
-// ট্যাগ বা মেনশন বাদ দেওয়ার ফাংশন
 function removeMentions(text) {
     if (!text) return "";
     return text.replace(/@[^\s]+/g, '').trim();
 }
 
-// 🎭 মানুষের মতো টাইপিং করার ফাংশন
-function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID) {
+// 🎭 টাইপিং ইফেক্ট
+function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID = null, mentions = []) {
     const textLength = messageText.length;
-    let typingTime = Math.min(Math.max(textLength * 60, 1200), 3500);
+    let typingTime = Math.min(Math.max(textLength * 50, 1000), 2500);
 
-    api.sendTypingIndicator(threadID, (err) => {
-        if (err) console.log("Typing indicator warning ignored.");
-    });
+    api.sendTypingIndicator(threadID, () => {});
 
     setTimeout(() => {
-        api.sendMessage(messageText, threadID, replyToMessageID);
+        api.sendMessage({ body: messageText, mentions: mentions }, threadID, replyToMessageID);
     }, typingTime);
 }
 
-console.log("🔄 বটের মেসেজে রিপ্লাই সাপোর্টসহ আপডেট বট চালু হচ্ছে...");
+// 🤖 AI প্রম্পট (অ্যাডমিনের কথা শোনা ও অন্যকে জ্বালাতন করার লজিক)
+async function askAI(userMessage, targetName = "", mode = "normal") {
+    try {
+        let prompt = "";
+        
+        if (mode === "roast") {
+            prompt = `তুমি তুষার (অ্যাডমিন)-এর বিশ্বস্ত রোবট বন্ধু। তুষার তোমাকে আদেশ দিয়েছে "${targetName}" নামের ফ্রেন্ডকে একটু জ্বালাতন বা পঁচাতে। 
+তুমি "${targetName}"-কে উদ্দেশ্য করে ১-২ লাইনে খুব মজার এবং হালকা ফানি পঁচানি দাও (কোনো গালিগালাজ বা খারাপ ভাষা ব্যবহার করবে না, কিন্তু যেন পঁচানো হয়)।`;
+        } else {
+            prompt = `তুমি তুষারের তৈরি করা একজন সাধারণ বন্ধু। বন্ধুদের সাথে স্বাভাবিক ১ লাইনের চ্যাট করো। 
+মেসেজ: "${userMessage}"`;
+        }
+
+        const result = await aiModel.generateContent(prompt);
+        return result.response.text().trim();
+    } catch (err) {
+        return "ধুর ভাই, এখন মেজাজ খারাপ! পরে কথা বলি।";
+    }
+}
+
+console.log("🔄 অ্যাডমিন বশীকরণ ও ট্রোলিং বট চালু হচ্ছে...");
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ:", err);
 
     const botID = api.getCurrentUserID();
-    console.log(`✅ Smart Human Bot Active! Bot ID: ${botID}`);
+    console.log(`✅ Admin Control Bot Active! ID: ${botID}`);
 
     api.setOptions({
         listenEvents: true,
@@ -58,6 +78,19 @@ login({ appState }, (err, api) => {
     api.listenMqtt((listenErr, event) => {
         if (listenErr) return;
 
+        // 🟢 ১. নতুন মেম্বার যুক্ত হলে ওয়েলকাম
+        if (event.logMessageType === "log:subscribe") {
+            const addedParticipants = event.logMessageData.addedParticipants;
+            for (let member of addedParticipants) {
+                if (member.userFbId !== botID) {
+                    const welcomeMsg = `ওয়েলকাম টু গ্রুপ ${member.fullName}! আমাদের অ্যাডমিন সাহেবের নির্দেশ মেনে চলবেন, নয়তো পঁচানি খেতে হবে! 😉`;
+                    const mentions = [{ tag: member.fullName, id: member.userFbId }];
+                    sendHumanLikeMessage(api, welcomeMsg, event.threadID, null, mentions);
+                }
+            }
+        }
+
+        // 🟢 ২. মেসেজ প্রসেসিং
         if (event.type === "message" || event.type === "message_reply") {
             const rawBody = event.body ? event.body.trim() : "";
             if (!rawBody) return;
@@ -66,46 +99,64 @@ login({ appState }, (err, api) => {
             const senderID = event.senderID;
             const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
-            // বট নিজের অটো-মেসেজ প্রসেস করবে না
             if (senderID === botID) return;
 
+            const isAdmin = config.adminID.includes(senderID);
             let cleanBody = removeMentions(rawBody).toLowerCase();
 
-            // 🟢 ১. শুধু ট্যাগ বা মেনশন দিলে উত্তর
-            if (rawBody.toLowerCase() === config.prefix.toLowerCase() || cleanBody === "") {
-                const assistantReplies = [
-                    "জি বলুন, কীভাবে সাহায্য করতে পারি? 😊",
-                    "হুম বলুন, শুনছি।",
-                    "জি বলুন, কি বলতে চান?"
-                ];
-                const randomReply = assistantReplies[Math.floor(Math.random() * assistantReplies.length)];
-                return sendHumanLikeMessage(api, randomReply, threadID, event.messageID);
+            // 👑 ৩. অ্যাডমিন কমান্ড: "একে জ্বালাও" বা "একে পঁচাও"
+            if (isAdmin && (cleanBody.includes("একে জ্বালাও") || cleanBody.includes("একে পঁচাও") || cleanBody.includes("roast"))) {
+                let targetID = null;
+                let targetName = "বন্ধুটি";
+
+                // (ক) যদি কারো মেসেজে রিপ্লাই দিয়ে বলেন "একে জ্বালাও"
+                if (event.type === "message_reply" && event.messageReply) {
+                    targetID = event.messageReply.senderID;
+                } 
+                // (খ) যদি কাউকে মেনশন করে বলেন
+                else if (Object.keys(event.mentions).length > 0) {
+                    targetID = Object.keys(event.mentions)[0];
+                    targetName = event.mentions[targetID];
+                }
+
+                if (targetID) {
+                    askAI(rawBody, targetName, "roast").then(roastMsg => {
+                        const mentions = [{ tag: targetName, id: targetID }];
+                        sendHumanLikeMessage(api, roastMsg, threadID, event.messageID, mentions);
+                    });
+                    return;
+                } else {
+                    return sendHumanLikeMessage(api, "বস, কাকে জ্বালাতে হবে তার মেসেজে রিপ্লাই দিন অথবা তাকে মেনশন করুন!", threadID, event.messageID);
+                }
             }
 
-            // 🟢 ২. ডাটাবেজে উত্তর মিললে সরাসরি মানুষের মতো টাইপ করে মেসেজ দেওয়া
+            // 🟢 ৪. ম্যানুয়াল টিচিং (teach প্রশ্ন = উত্তর)
+            if (cleanBody.startsWith("teach ")) {
+                const inputContent = rawBody.slice(6).trim();
+                const splitData = inputContent.split("=");
+
+                if (splitData.length >= 2) {
+                    const question = removeMentions(splitData[0]).toLowerCase().trim();
+                    const answer = splitData.slice(1).join("=").trim();
+
+                    if (question && answer) {
+                        db[question] = answer;
+                        fs.writeFileSync(dbPath, JSON.stringify(db, null, 2)); // ডাটাবেজে সেভ
+                        return sendHumanLikeMessage(api, `✅ বস, সেভ করে নিয়েছি!\n\nপ্রশ্ন: ${question}\nউত্তর: ${answer}`, threadID, event.messageID);
+                    }
+                }
+            }
+
+            // 🟢 ৫. ডাটাবেজে আগে থেকে থাকলে ডাটাবেজ থেকে উত্তর দেবে
             if (db[cleanBody]) {
                 return sendHumanLikeMessage(api, db[cleanBody], threadID, event.messageID);
             }
 
-            // 🟢 ৩. মেসেজে রিপ্লাই (Quote Reply) দিলে কীভাবে রেসপন্স করবে
-            if (event.type === "message_reply" && event.messageReply) {
-                const replyToSender = event.messageReply.senderID;
-                const replyToMsg = event.messageReply.body ? event.messageReply.body.trim() : "";
-                const cleanReplyTo = removeMentions(replyToMsg).toLowerCase();
-
-                // (ক) ইউজার যদি বটের মেসেজে রিপ্লাই দিয়ে কিছু জিজ্ঞেস করে এবং ডাটাবেজে উত্তর থাকে
-                if (replyToSender === botID && db[cleanBody]) {
-                    return sendHumanLikeMessage(api, db[cleanBody], threadID, event.messageID);
-                }
-
-                // (খ) ইউজাররা নিজেদের মধ্যে বা অন্য কারও কথার রিপ্লাই দিয়ে শেখালে
-                if (replyToSender !== botID && replyToMsg.length > 2 && cleanBody.length > 2 && !badWords.includes(cleanBody)) {
-                    if (cleanReplyTo && !db[cleanReplyTo]) {
-                        db[cleanReplyTo] = rawBody;
-                        fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-                        console.log(`🧠 নতুন উত্তর সেভ হয়েছে: "${cleanReplyTo}" = "${rawBody}"`);
-                    }
-                }
+            // 🟢 ৬. মেনশন করলে বা স্বাভাবিক কথা বললে AI মানুষের মতো উত্তর দেবে
+            if (rawBody.toLowerCase().includes(config.prefix.toLowerCase()) || cleanBody !== "") {
+                askAI(rawBody).then(aiReply => {
+                    if (aiReply) sendHumanLikeMessage(api, aiReply, threadID, event.messageID);
+                });
             }
         }
     });
