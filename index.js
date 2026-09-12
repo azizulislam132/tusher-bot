@@ -1,6 +1,7 @@
 const login = require('mahmud-fca');
 const fs = require('fs');
 const path = require('path');
+
 // ১. স্বয়ংক্রিয়ভাবে config.json তৈরি
 if (!fs.existsSync('./config.json')) {
     const defaultConfig = {
@@ -59,7 +60,17 @@ console.log("🔄 ব্রাউজার সেশন দিয়ে ফেস�
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ হয়েছে! AppState পরিবর্তন করো:", err);
 
+    // 🟢 কানেক্ট হওয়ার মেসেজ কনসোলে দেখাবে
+    console.log("✅ Bot is connected!");
     console.log(`🚀 ${config.botName} সফলভাবে চালুর জন্য প্রস্তুত!`);
+
+    // (ঐচ্ছিক) বট কানেক্ট হলে অ্যাডমিনের ইনবক্সে মেসেজ পাঠাবে
+    if (config.adminID && config.adminID.length > 0) {
+        const firstAdmin = config.adminID[0];
+        api.sendMessage("🟢 Bot is connected and running successfully!", firstAdmin, (msgErr) => {
+            if (!msgErr) console.log("📩 অ্যাডমিনকে কানেকশন নোটিফিকেশন পাঠানো হয়েছে।");
+        });
+    }
 
     api.setOptions({
         listenEvents: true,
@@ -73,6 +84,10 @@ login({ appState }, (err, api) => {
 
         if (event.type === "message" || event.type === "message_reply") {
             const body = event.body ? event.body.trim() : "";
+            
+            // groupOnly ফিল্টার চেক
+            if (config.groupOnly && !event.isGroup) return;
+
             if (!body.startsWith(config.prefix)) return;
 
             const args = body.slice(config.prefix.length).trim().split(/ +/);
