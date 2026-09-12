@@ -10,7 +10,7 @@ if (!fs.existsSync(dbPath)) {
 
 const config = { 
     botName: "Tusher AI", 
-    prefix: "@M Tusher Khan", // আপনার কাস্টম প্রিফিক্স
+    prefix: "@M Tusher Khan",
     adminID: ["10008823902910"]
 };
 
@@ -20,15 +20,69 @@ const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
 process.on('unhandledRejection', (reason) => console.log('⚠️ Ignored:', reason?.message || reason));
 process.on('uncaughtException', (err) => console.log('⚠️ Ignored:', err?.message || err));
 
-// মেসেজের ইতিহাস মনে রাখার জন্য মেমোরি (অটো-লার্নিং এর জন্য)
+// 🟢 ২. বানান ভুল হলেও মিল খুঁজে বের করার ফাংশন (Fuzzy Matching Algorithm)
+function getSimilarity(s1, s2) {
+    let longer = s1.length < s2.length ? s2 : s1;
+    let shorter = s1.length < s2.length ? s1 : s2;
+    let longerLength = longer.length;
+    if (longerLength === 0) return 1.0;
+    
+    // Levenshtein distance calculation
+    let costs = new Array();
+    for (let i = 0; i <= s1.length; i++) {
+        let lastValue = i;
+        for (let j = 0; j <= s2.length; j++) {
+            if (i === 0) costs[j] = j;
+            else {
+                if (j > 0) {
+                    let newValue = costs[j - 1];
+                    if (s1.charAt(i - 1) !== s2.charAt(j - 1))
+                        newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                    costs[j - 1] = lastValue;
+                    lastValue = newValue;
+                }
+            }
+        }
+        if (i > 0) costs[s2.length] = lastValue;
+    }
+    return (longerLength - costs[s2.length]) / parseFloat(longerLength);
+}
+
+// উপযুক্ত উত্তর খুঁজে বের করার ফাংশন
+function findBestReply(userText, db) {
+    let bestMatchKey = null;
+    let highestScore = 0;
+
+    for (let key in db) {
+        // ১. সরাসরি মিললে বা লেখার ভেতর পাওয়া গেলে
+        if (userText === key || userText.includes(key) || key.includes(userText)) {
+            return db[key];
+        }
+
+        // ২. বানান ভুল থাকলে মিলের শতাংশ হিসেব করা
+        let similarity = getSimilarity(userText, key);
+        if (similarity > highestScore) {
+            highestScore = similarity;
+            bestMatchKey = key;
+        }
+    }
+
+    // যদি লেখার সাথে ডাটাবেজের কথা অন্তত ৬৫% মিলে যায়, তবে উত্তর দিয়ে দেবে
+    if (highestScore >= 0.65 && bestMatchKey) {
+        return db[bestMatchKey];
+    }
+
+    return null;
+}
+
 const lastMessages = new Map();
 
-// ২. ফেসবুক লগইন
-console.log("🔄 হিউম্যান অ্যাসিস্ট্যান্ট বট চালু হচ্ছে...");
+// ৩. ফেসবুক লগইন
+console.log("🔄 বানান ভুল সহ বুঝতে পারা স্মার্ট বট চালু হচ্ছে...");
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ:", err);
 
-    console.log("✅ Smart Human AI Bot is Active!");
+    console.log("✅ Smart Matching Bot is Active!");
 
     api.setOptions({
         listenEvents: true,
@@ -50,7 +104,7 @@ login({ appState }, (err, api) => {
             const lowerBody = body.toLowerCase();
             const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
-            // 🟢 ১. কেউ যদি কাস্টম প্রিফিক্স `@M Tusher Khan` টাইপ করে
+            // 🟢 ১. কাস্টম প্রিফিক্স `@M Tusher Khan` টাইপ করলে
             if (lowerBody === config.prefix.toLowerCase()) {
                 const assistantReplies = [
                     "জি বলুন, কীভাবে সাহায্য করতে পারি? 😊",
@@ -67,31 +121,29 @@ login({ appState }, (err, api) => {
                 });
             }
 
-            // 🟢 ২. ডাটাবেজে আগে থেকে শেখা কোনো কথা থাকলে মানুষের মতো উত্তর দেওয়া
-            if (db[lowerBody]) {
-                const replyText = db[lowerBody];
+            // 🟢 ২. ভুল বানান বা কাছাকাছি শব্দ থেকে সেরা উত্তর খুঁজে বের করা
+            const matchedReply = findBestReply(lowerBody, db);
+            if (matchedReply) {
                 return api.sendTypingIndicator(threadID, () => {
                     setTimeout(() => {
-                        api.sendMessage({ body: replyText }, threadID, event.messageID);
+                        api.sendMessage({ body: matchedReply }, threadID, event.messageID);
                     }, 1500);
                 });
             }
 
-            // 🟢 ৩. অটো সেলফ-লার্নিং (গ্রুপে নতুন কথা শুনলে স্বয়ংক্রিয়ভাবে শেখা)
+            // 🟢 ৩. নতুন কথা শেখা (Auto Learning System)
             if (lastMessages.has(threadID)) {
                 const previousMsg = lastMessages.get(threadID);
 
-                // লিংক বা খুব ছোট কথা সেভ করবে না
                 if (previousMsg && previousMsg.length > 2 && lowerBody.length > 1 && !previousMsg.startsWith("http")) {
                     if (!db[previousMsg]) {
-                        db[previousMsg] = body; // স্বয়ংক্রিয়ভাবে সেভ হবে
+                        db[previousMsg] = body;
                         fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-                        console.log(`🧠 অটো নতুন কথা সেভ হয়েছে: "${previousMsg}" = "${body}"`);
+                        console.log(`🧠 অটো নতুন কথা শিখেছে: "${previousMsg}" = "${body}"`);
                     }
                 }
             }
 
-            // বর্তমান কথাটি সেভ করে রাখা যাতে পরের রিপ্লাইকে উত্তর বানানো যায়
             lastMessages.set(threadID, lowerBody);
         }
     });
