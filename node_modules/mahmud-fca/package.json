@@ -1,0 +1,58 @@
+{
+  "name": "mahmud-fca",
+  "version": "2.0.7",
+  "description": "Facebook Chat API - Send messages, listen to chats, manage threads and more. Made by MahMUD.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mahmudx7/mahmud-fca"
+  },
+  "author": "MahMUD",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mahmudx7/mahmud-fca/issues"
+  },
+  "homepage": "https://github.com/mahmudx7/mahmud-fca#readme",
+  "keywords": [
+    "facebook",
+    "facebook-chat",
+    "facebook-api",
+    "facebook-chat-api",
+    "facebook-messenger",
+    "messenger",
+    "messenger-api",
+    "chat",
+    "chat-api",
+    "fca",
+    "mahmud-fca",
+    "fb-chat-api",
+    "fb",
+    "fbapi",
+    "bot",
+    "chatbot",
+    "facebook-bot",
+    "messenger-bot",
+    "nodejs",
+    "node-facebook"
+  ],
+  "dependencies": {
+    "axios": "^1.6.5",
+    "bluebird": "^3.7.2",
+    "cheerio": "^0.22.0",
+    "https-proxy-agent": "^4.0.0",
+    "mqtt": "^3.0.0",
+    "request": "^2.88.2",
+    "websocket-stream": "^5.5.0"
+  },
+  "devDependencies": {
+    "eslint": "^7.5.0",
+    "mocha": "^7.0.1",
+    "prettier": "^1.11.1"
+  },
+  "engines": {
+    "node": ">=10.x"
+  }
+}
