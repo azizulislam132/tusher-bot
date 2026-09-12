@@ -10,7 +10,7 @@ if (!fs.existsSync(dbPath)) {
 const config = { 
     botName: "Tusher AI", 
     prefix: "@M Tusher Khan",
-    adminID: ["10008823902910"]
+    adminID: ["61591564637714"]
 };
 
 const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
@@ -26,24 +26,21 @@ function removeMentions(text) {
     return text.replace(/@[^\s]+/g, '').trim();
 }
 
-// 🎭 মানুষের মতো টাইপিং করার স্মার্ট ফাংশন (Human-like Typing Delay)
+// 🎭 মানুষের মতো টাইপিং করার ফাংশন
 function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID) {
-    // মেসেজের সাইজ অনুযায়ী টাইপিং টাইম ঠিক করা (প্রতি অক্ষরের জন্য ৬০ms, সর্বনিম্ন ১ সে. ও সর্বোচ্চ ৩.৫ সে.)
     const textLength = messageText.length;
     let typingTime = Math.min(Math.max(textLength * 60, 1200), 3500);
 
-    // ১. টাইপিং ইন্ডিকেটর চালু করা
     api.sendTypingIndicator(threadID, (err) => {
         if (err) console.log("Typing indicator warning ignored.");
     });
 
-    // ২. মানুষের মতো কিছুটা সময় নিয়ে তারপর মেসেজ পাঠানো
     setTimeout(() => {
         api.sendMessage(messageText, threadID, replyToMessageID);
     }, typingTime);
 }
 
-console.log("🔄 মানুষের মতো টাইপ করা স্মার্ট বট চালু হচ্ছে...");
+console.log("🔄 বটের মেসেজে রিপ্লাই সাপোর্টসহ আপডেট বট চালু হচ্ছে...");
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ:", err);
 
@@ -69,12 +66,12 @@ login({ appState }, (err, api) => {
             const senderID = event.senderID;
             const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
-            // বট নিজের মেসেজ প্রসেস করবে না
+            // বট নিজের অটো-মেসেজ প্রসেস করবে না
             if (senderID === botID) return;
 
             let cleanBody = removeMentions(rawBody).toLowerCase();
 
-            // ১. শুধু ট্যাগ বা নাম ধরে ডাকলে
+            // 🟢 ১. শুধু ট্যাগ বা মেনশন দিলে উত্তর
             if (rawBody.toLowerCase() === config.prefix.toLowerCase() || cleanBody === "") {
                 const assistantReplies = [
                     "জি বলুন, কীভাবে সাহায্য করতে পারি? 😊",
@@ -82,27 +79,31 @@ login({ appState }, (err, api) => {
                     "জি বলুন, কি বলতে চান?"
                 ];
                 const randomReply = assistantReplies[Math.floor(Math.random() * assistantReplies.length)];
-                
                 return sendHumanLikeMessage(api, randomReply, threadID, event.messageID);
             }
 
-            // ২. ডাটাবেজে সঠিক উত্তর মিললে মানুষের মতো টাইপ করে মেসেজ দেবে
+            // 🟢 ২. ডাটাবেজে উত্তর মিললে সরাসরি মানুষের মতো টাইপ করে মেসেজ দেওয়া
             if (db[cleanBody]) {
                 return sendHumanLikeMessage(api, db[cleanBody], threadID, event.messageID);
             }
 
-            // 🟢 ৩. নিখুঁত অটো-লার্নিং লজিক (Reply Learning)
+            // 🟢 ৩. মেসেজে রিপ্লাই (Quote Reply) দিলে কীভাবে রেসপন্স করবে
             if (event.type === "message_reply" && event.messageReply) {
                 const replyToSender = event.messageReply.senderID;
                 const replyToMsg = event.messageReply.body ? event.messageReply.body.trim() : "";
-                
+                const cleanReplyTo = removeMentions(replyToMsg).toLowerCase();
+
+                // (ক) ইউজার যদি বটের মেসেজে রিপ্লাই দিয়ে কিছু জিজ্ঞেস করে এবং ডাটাবেজে উত্তর থাকে
+                if (replyToSender === botID && db[cleanBody]) {
+                    return sendHumanLikeMessage(api, db[cleanBody], threadID, event.messageID);
+                }
+
+                // (খ) ইউজাররা নিজেদের মধ্যে বা অন্য কারও কথার রিপ্লাই দিয়ে শেখালে
                 if (replyToSender !== botID && replyToMsg.length > 2 && cleanBody.length > 2 && !badWords.includes(cleanBody)) {
-                    const cleanReplyTo = removeMentions(replyToMsg).toLowerCase();
-                    
                     if (cleanReplyTo && !db[cleanReplyTo]) {
                         db[cleanReplyTo] = rawBody;
                         fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-                        console.log(`🧠 নতুন সঠিক উত্তর সেভ হয়েছে: "${cleanReplyTo}" = "${rawBody}"`);
+                        console.log(`🧠 নতুন উত্তর সেভ হয়েছে: "${cleanReplyTo}" = "${rawBody}"`);
                     }
                 }
             }
