@@ -9,9 +9,9 @@ if (!fs.existsSync(dbPath)) {
 }
 
 const config = { 
-    botName: "Tusher AI", 
+    botName: "Tusher Boss", 
     prefix: "@M Tusher Khan",
-    adminID: ["10008823902910"]
+    adminID: ["61591564637714"]
 };
 
 const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
