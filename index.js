@@ -2,111 +2,97 @@ const login = require('mahmud-fca');
 const fs = require('fs');
 const path = require('path');
 
-// ১. স্বয়ংক্রিয়ভাবে config.json তৈরি
-if (!fs.existsSync('./config.json')) {
-    const defaultConfig = {
-        botName: "Tusher Custom Bot",
-        prefix: "/",
-        adminID: ["61591564637714"],
-        groupOnly: false
-    };
-    fs.writeFileSync('./config.json', JSON.stringify(defaultConfig, null, 2));
-    console.log("⚙️ config.json ছিল না, নতুন তৈরি করা হয়েছে!");
-}
-const config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
-
-// ২. স্বয়ংক্রিয়ভাবে খালি appstate.json তৈরি
-if (!fs.existsSync('./appstate.json')) {
-    fs.writeFileSync('./appstate.json', JSON.stringify([], null, 2));
-    console.log("⚠️ appstate.json ছিল না! নতুন খালি তৈরি হয়েছে।");
-    process.exit(1);
+// ১. ডাটাবেস ও কনফিগ লোড
+const dbPath = path.join(__dirname, 'database.json');
+if (!fs.existsSync(dbPath)) {
+    fs.writeFileSync(dbPath, JSON.stringify({}, null, 2));
 }
 
-// ৩. AppState চেক
+const config = { 
+    botName: "Tusher AI", 
+    prefix: "@M Tusher Khan", // আপনার কাস্টম প্রিফিক্স
+    adminID: ["10008823902910"]
+};
+
 const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
-if (!Array.isArray(appState) || appState.length === 0) {
-    console.error("❌ appstate.json খালি!");
-    process.exit(1);
-}
 
-// ৪. V3 স্টাইল কমান্ড ফোল্ডার চেক ও তৈরি
-const cmdPath = path.join(__dirname, 'scripts', 'cmds');
-if (!fs.existsSync(cmdPath)) {
-    fs.mkdirSync(cmdPath, { recursive: true });
-    console.log("📁 scripts/cmds ফোল্ডার তৈরি করা হয়েছে!");
-}
+// Anti-Crash System
+process.on('unhandledRejection', (reason) => console.log('⚠️ Ignored:', reason?.message || reason));
+process.on('uncaughtException', (err) => console.log('⚠️ Ignored:', err?.message || err));
 
-// ৫. কাস্টম কমান্ড লোড করা
-global.commands = new Map();
-const files = fs.readdirSync(cmdPath).filter(f => f.endsWith('.js'));
-for (const file of files) {
-    try {
-        const cmd = require(path.join(cmdPath, file));
-        if (cmd.config && cmd.config.name && cmd.onStart) {
-            global.commands.set(cmd.config.name, cmd);
-            console.log(`✅ কমান্ড লোড হয়েছে: ${cmd.config.name}`);
-        }
-    } catch (e) {
-        console.error(`❌ কমান্ড লোড এরর (${file}):`, e.message);
-    }
-}
+// মেসেজের ইতিহাস মনে রাখার জন্য মেমোরি (অটো-লার্নিং এর জন্য)
+const lastMessages = new Map();
 
-// Anti-Crash হ্যান্ডলার
-process.on('unhandledRejection', (reason) => console.log('⚠️ Rejection Ignored:', reason?.message || reason));
-process.on('uncaughtException', (err) => console.log('⚠️ Exception Ignored:', err?.message || err));
-
-// ৬. ফেসবুক লগইন
-console.log("🔄 ব্রাউজার সেশন দিয়ে ফেসবুকে লগইন করা হচ্ছে...");
+// ২. ফেসবুক লগইন
+console.log("🔄 হিউম্যান অ্যাসিস্ট্যান্ট বট চালু হচ্ছে...");
 login({ appState }, (err, api) => {
-    if (err) return console.error("❌ লগইন ব্যর্থ হয়েছে! AppState পরিবর্তন করো:", err);
+    if (err) return console.error("❌ লগইন ব্যর্থ:", err);
 
-    console.log("✅ Bot is connected!");
-    console.log(`🚀 ${config.botName} সফলভাবে চালুর জন্য প্রস্তুত!`);
+    console.log("✅ Smart Human AI Bot is Active!");
 
-    // বটের প্রয়োজনীয় সেটিং সেট করা
     api.setOptions({
         listenEvents: true,
         selfListen: false,
-        autoMarkDelivery: false,
         autoMarkRead: true,
-        listenTyping: false,
+        listenTyping: true,
         updatePresence: true,
         forceLogin: true
     });
 
-    // 🟢 মেসেজ লিসেনার (নতুন সংশোধিত নিয়ম)
-    const listenEmitter = api.listenMqtt((listenErr, event) => {
-        if (listenErr) {
-            console.error("❌ Mqtt Listen Error:", listenErr);
-            return;
-        }
+    api.listenMqtt((listenErr, event) => {
+        if (listenErr) return;
 
-        // মেসেজ আসলে তা কনসোলে দেখাবে (টার্মিনালে এসএমএস দেখার জন্য)
         if (event.type === "message" || event.type === "message_reply") {
             const body = event.body ? event.body.trim() : "";
-            const senderID = event.senderID;
-            
-            console.log(`📩 নতুন মেসেজ এসেছে [ID: ${senderID}]: ${body}`);
+            if (!body) return;
 
-            // groupOnly ফিল্টার চেক
-            if (config.groupOnly && !event.isGroup) return;
+            const threadID = event.threadID;
+            const lowerBody = body.toLowerCase();
+            const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
-            // প্রিফিক্স (! বা অন্য কিছু) না থাকলে রেসপন্স করবে না
-            if (!body.startsWith(config.prefix)) return;
+            // 🟢 ১. কেউ যদি কাস্টম প্রিফিক্স `@M Tusher Khan` টাইপ করে
+            if (lowerBody === config.prefix.toLowerCase()) {
+                const assistantReplies = [
+                    "জি বলুন, কীভাবে সাহায্য করতে পারি? 😊",
+                    "হুম বলুন, শুনছি।",
+                    "জি বলুন, কি বলতে চান?",
+                    "ডাকলেন? বলুন কি অবস্থা?"
+                ];
+                const randomReply = assistantReplies[Math.floor(Math.random() * assistantReplies.length)];
 
-            const args = body.slice(config.prefix.length).trim().split(/ +/);
-            const cmdName = args.shift().toLowerCase();
-
-            if (global.commands.has(cmdName)) {
-                const command = global.commands.get(cmdName);
-                try {
-                    command.onStart({ api, event, args });
-                } catch (cmdErr) {
-                    api.sendMessage({ body: `❌ কমান্ড রান এরর: ${cmdErr.message}` }, event.threadID, event.messageID);
-                }
-            } else {
-                api.sendMessage({ body: `❌ "${cmdName}" নামে কোনো কমান্ড নেই। সকল কমান্ড দেখতে ${config.prefix}help টাইপ করো।` }, event.threadID, event.messageID);
+                return api.sendTypingIndicator(threadID, () => {
+                    setTimeout(() => {
+                        api.sendMessage({ body: randomReply }, threadID, event.messageID);
+                    }, 1200);
+                });
             }
+
+            // 🟢 ২. ডাটাবেজে আগে থেকে শেখা কোনো কথা থাকলে মানুষের মতো উত্তর দেওয়া
+            if (db[lowerBody]) {
+                const replyText = db[lowerBody];
+                return api.sendTypingIndicator(threadID, () => {
+                    setTimeout(() => {
+                        api.sendMessage({ body: replyText }, threadID, event.messageID);
+                    }, 1500);
+                });
+            }
+
+            // 🟢 ৩. অটো সেলফ-লার্নিং (গ্রুপে নতুন কথা শুনলে স্বয়ংক্রিয়ভাবে শেখা)
+            if (lastMessages.has(threadID)) {
+                const previousMsg = lastMessages.get(threadID);
+
+                // লিংক বা খুব ছোট কথা সেভ করবে না
+                if (previousMsg && previousMsg.length > 2 && lowerBody.length > 1 && !previousMsg.startsWith("http")) {
+                    if (!db[previousMsg]) {
+                        db[previousMsg] = body; // স্বয়ংক্রিয়ভাবে সেভ হবে
+                        fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+                        console.log(`🧠 অটো নতুন কথা সেভ হয়েছে: "${previousMsg}" = "${body}"`);
+                    }
+                }
+            }
+
+            // বর্তমান কথাটি সেভ করে রাখা যাতে পরের রিপ্লাইকে উত্তর বানানো যায়
+            lastMessages.set(threadID, lowerBody);
         }
     });
 });
