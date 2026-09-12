@@ -5,7 +5,8 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // 🔑 আপনার Gemini API Key এখানে দিন
 const genAI = new GoogleGenerativeAI("AQ.Ab8RN6KTdSzZThqJJZ6pEEq-GtwvDHDMDSUbbEv-OtNeg7_s9Q");
-const aiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
 
 const dbPath = path.join(__dirname, 'database.json');
 if (!fs.existsSync(dbPath)) {
