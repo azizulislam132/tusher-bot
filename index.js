@@ -2,87 +2,32 @@ const login = require('mahmud-fca');
 const fs = require('fs');
 const path = require('path');
 
-// ১. ডাটাবেস ও কনফিগ লোড
 const dbPath = path.join(__dirname, 'database.json');
 if (!fs.existsSync(dbPath)) {
     fs.writeFileSync(dbPath, JSON.stringify({}, null, 2));
 }
 
 const config = { 
-    botName: "Tusher Boss", 
+    botName: "Tusher AI", 
     prefix: "@M Tusher Khan",
     adminID: ["61591564637714"]
 };
 
 const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
 
-// Anti-Crash System
 process.on('unhandledRejection', (reason) => console.log('⚠️ Ignored:', reason?.message || reason));
 process.on('uncaughtException', (err) => console.log('⚠️ Ignored:', err?.message || err));
 
-// 🟢 ২. বানান ভুল হলেও মিল খুঁজে বের করার ফাংশন (Fuzzy Matching Algorithm)
-function getSimilarity(s1, s2) {
-    let longer = s1.length < s2.length ? s2 : s1;
-    let shorter = s1.length < s2.length ? s1 : s2;
-    let longerLength = longer.length;
-    if (longerLength === 0) return 1.0;
-    
-    // Levenshtein distance calculation
-    let costs = new Array();
-    for (let i = 0; i <= s1.length; i++) {
-        let lastValue = i;
-        for (let j = 0; j <= s2.length; j++) {
-            if (i === 0) costs[j] = j;
-            else {
-                if (j > 0) {
-                    let newValue = costs[j - 1];
-                    if (s1.charAt(i - 1) !== s2.charAt(j - 1))
-                        newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-                    costs[j - 1] = lastValue;
-                    lastValue = newValue;
-                }
-            }
-        }
-        if (i > 0) costs[s2.length] = lastValue;
-    }
-    return (longerLength - costs[s2.length]) / parseFloat(longerLength);
-}
-
-// উপযুক্ত উত্তর খুঁজে বের করার ফাংশন
-function findBestReply(userText, db) {
-    let bestMatchKey = null;
-    let highestScore = 0;
-
-    for (let key in db) {
-        // ১. সরাসরি মিললে বা লেখার ভেতর পাওয়া গেলে
-        if (userText === key || userText.includes(key) || key.includes(userText)) {
-            return db[key];
-        }
-
-        // ২. বানান ভুল থাকলে মিলের শতাংশ হিসেব করা
-        let similarity = getSimilarity(userText, key);
-        if (similarity > highestScore) {
-            highestScore = similarity;
-            bestMatchKey = key;
-        }
-    }
-
-    // যদি লেখার সাথে ডাটাবেজের কথা অন্তত ৬৫% মিলে যায়, তবে উত্তর দিয়ে দেবে
-    if (highestScore >= 0.65 && bestMatchKey) {
-        return db[bestMatchKey];
-    }
-
-    return null;
-}
-
+// অনর্থক বা ছোট কথা বাদ দেওয়ার ফিল্টার
+const badWords = ["অহ তাই", "ওহ", "হুম", "ok", "hmm", "আহা", "হায়", "হ্যাঁ", "না", "ভালো তুমি?"];
 const lastMessages = new Map();
 
-// ৩. ফেসবুক লগইন
-console.log("🔄 বানান ভুল সহ বুঝতে পারা স্মার্ট বট চালু হচ্ছে...");
+console.log("🔄 অটো সেলফ-লার্নিং বট চালু হচ্ছে...");
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ:", err);
 
-    console.log("✅ Smart Matching Bot is Active!");
+    const botID = api.getCurrentUserID();
+    console.log(`✅ Smart AI Active! Bot ID: ${botID}`);
 
     api.setOptions({
         listenEvents: true,
@@ -101,16 +46,19 @@ login({ appState }, (err, api) => {
             if (!body) return;
 
             const threadID = event.threadID;
+            const senderID = event.senderID;
             const lowerBody = body.toLowerCase();
             const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
-            // 🟢 ১. কাস্টম প্রিফিক্স `@M Tusher Khan` টাইপ করলে
-            if (lowerBody === config.prefix.toLowerCase()) {
+            // বট নিজের মেসেজ ধরবে না
+            if (senderID === botID) return;
+
+            // ১. কাস্টম মেনশন প্রিফিক্স `@M Tusher Khan` দিলে উত্তর
+            if (lowerBody === config.prefix.toLowerCase() || body.includes(config.prefix)) {
                 const assistantReplies = [
                     "জি বলুন, কীভাবে সাহায্য করতে পারি? 😊",
                     "হুম বলুন, শুনছি।",
-                    "জি বলুন, কি বলতে চান?",
-                    "ডাকলেন? বলুন কি অবস্থা?"
+                    "জি বলুন, কি বলতে চান?"
                 ];
                 const randomReply = assistantReplies[Math.floor(Math.random() * assistantReplies.length)];
 
@@ -121,25 +69,27 @@ login({ appState }, (err, api) => {
                 });
             }
 
-            // 🟢 ২. ভুল বানান বা কাছাকাছি শব্দ থেকে সেরা উত্তর খুঁজে বের করা
-            const matchedReply = findBestReply(lowerBody, db);
-            if (matchedReply) {
+            // ২. ডাটাবেজে সঠিক উত্তর মিললে রিপ্লাই দেবে
+            if (db[lowerBody]) {
+                const replyText = db[lowerBody];
                 return api.sendTypingIndicator(threadID, () => {
                     setTimeout(() => {
-                        api.sendMessage({ body: matchedReply }, threadID, event.messageID);
+                        api.sendMessage({ body: replyText }, threadID, event.messageID);
                     }, 1500);
                 });
             }
 
-            // 🟢 ৩. নতুন কথা শেখা (Auto Learning System)
-            if (lastMessages.has(threadID)) {
-                const previousMsg = lastMessages.get(threadID);
-
-                if (previousMsg && previousMsg.length > 2 && lowerBody.length > 1 && !previousMsg.startsWith("http")) {
-                    if (!db[previousMsg]) {
-                        db[previousMsg] = body;
+            // 🟢 ৩. নিখুঁত অটো-লার্নিং লজিক (Reply Message Learning)
+            // কেউ নির্দিষ্ট মেসেজে Reply দিলে কেবল তখনই শিখবে (ভুল শেখার সম্ভাবনা ০%)
+            if (event.type === "message_reply" && event.messageReply) {
+                const replyToMsg = event.messageReply.body ? event.messageReply.body.trim().toLowerCase() : "";
+                
+                // নিজের পাঠানো কথার রিপ্লাই হলে বা ফালতু কথা হলে শিখবে না
+                if (event.messageReply.senderID !== botID && replyToMsg.length > 3 && lowerBody.length > 2 && !badWords.includes(lowerBody)) {
+                    if (!db[replyToMsg]) {
+                        db[replyToMsg] = body;
                         fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-                        console.log(`🧠 অটো নতুন কথা শিখেছে: "${previousMsg}" = "${body}"`);
+                        console.log(`🧠 সঠিকভাবে নতুন শেখা হয়েছে: "${replyToMsg}" = "${body}"`);
                     }
                 }
             }
