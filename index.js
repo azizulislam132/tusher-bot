@@ -8,7 +8,7 @@ if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({}, null, 2)
 
 const config = { 
     botName: "Tusher AI", 
-    prefix: "@M Tusher Khan",
+    prefix: "@M Tusher Khan", // আপনার কাঙ্ক্ষিত প্রিফিক্স
     adminID: ["61591564637714"]
 };
 
@@ -16,6 +16,14 @@ const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
 
 process.on('unhandledRejection', (reason) => console.log('⚠️ Ignored:', reason?.message || reason));
 process.on('uncaughtException', (err) => console.log('⚠️ Ignored:', err?.message || err));
+
+// 🚫 গালিগালাজ ফিল্টার লিস্ট
+const badWords = ["গালি১", "গালি২", "খানকি", "মাদারচোদ", "চুদ", "বোকাচোদা", "বাল"];
+
+function containsBadWords(text) {
+    const cleanText = text.toLowerCase();
+    return badWords.some(word => cleanText.includes(word));
+}
 
 function removeMentions(text) {
     if (!text) return "";
@@ -34,29 +42,30 @@ function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID = nul
     }, typingTime);
 }
 
-// 🧠 শেষ চ্যাট হিস্ট্রি রাখার মেমোরি (Memory Cache)
+// 🧠 মেমোরি ক্যাশ
 const lastMessages = {};
 
-// 🧠 প্রশ্ন চেনার লজিক (কী, কার, কেন, আছিস, টাকা ইত্যাদি)
+// 🧠 প্রশ্ন ডিটেকশন
 function isQuestion(text) {
     const qKeywords = ["কী", "কি", "কার", "কেন", "কেনো", "কী জন্য", "কি জন্য", "কখন", "কোথায়", "কীভাবে", "আছিস", "আছো", "টাকা", "আছস", "আসেন"];
     return qKeywords.some(word => text.includes(word));
 }
 
-console.log("🔄 Self-Learning Conversational Bot চালুর প্রস্তুতি...");
+console.log("🔄 Auto-Learning Bot (Fixed Prefix) চালুর প্রস্তুতি...");
 
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ:", err);
 
     const botID = api.getCurrentUserID();
-    console.log(`✅ Auto-Learning Smart Bot Active! ID: ${botID}`);
+    console.log(`✅ Smart Bot Active! ID: ${botID}`);
 
     api.setOptions({
         listenEvents: true,
         selfListen: false,
         autoMarkRead: true,
         updatePresence: true,
-        forceLogin: true
+        forceLogin: true,
+        listenTyping: false
     });
 
     api.listenMqtt((listenErr, event) => {
@@ -71,41 +80,56 @@ login({ appState }, (err, api) => {
             if (senderID === botID) return;
 
             const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-            let cleanBody = removeMentions(rawBody).toLowerCase();
+            const lowerBody = rawBody.toLowerCase();
+            const lowerPrefix = config.prefix.toLowerCase();
 
-            // 🟢 ১. অটো-লার্নিং সিস্টেম (স্বয়ংক্রিয়ভাবে শেখা)
-            // আগের মেসেজটি যদি প্রশ্ন হয়ে থাকে এবং বর্তমানেরটা উত্তর হয়
+            // 📌 Check if the bot is mentioned or prefixed
+            const isPrefixed = lowerBody.startsWith(lowerPrefix) || (event.mentions && Object.keys(event.mentions).includes(botID));
+
+            // Prefix বা Mention থাকলে সেটা কেটে পরিষ্কার মেসেজ বের করা
+            let cleanBody = rawBody;
+            if (lowerBody.startsWith(lowerPrefix)) {
+                cleanBody = rawBody.slice(config.prefix.length).trim();
+            } else {
+                cleanBody = removeMentions(rawBody).trim();
+            }
+            const cleanBodyLower = cleanBody.toLowerCase();
+
+            // 🛡️ গালি দিলে ফিল্টার
+            if (containsBadWords(rawBody)) {
+                const roastReplies = [
+                    "মুখটা একটু ভালো কর ভাই, সভ্য সমাজে আছিস!",
+                    "গালি দিয়ে নিজের পার্সোনালিটি নষ্ট করিস না!",
+                    "গালি দিলে কিন্তু সোজা ব্লক!"
+                ];
+                return sendHumanLikeMessage(api, roastReplies[Math.floor(Math.random() * roastReplies.length)], threadID, event.messageID);
+            }
+
+            // 🟢 ১. অটো-লার্নিং (গালি ছাড়া সেভ হবে)
             if (lastMessages[threadID] && lastMessages[threadID].isQ && lastMessages[threadID].senderID !== senderID) {
                 const prevQuestion = lastMessages[threadID].text;
                 const currentAnswer = rawBody;
 
-                // যদি এই প্রশ্নের কোনো উত্তর ডাটাবেজে না থাকে, তবে অটো সেভ করবে
-                if (!db[prevQuestion] && currentAnswer.length > 1 && currentAnswer.length < 100) {
+                if (!db[prevQuestion] && !containsBadWords(prevQuestion) && currentAnswer.length > 1 && currentAnswer.length < 100) {
                     db[prevQuestion] = currentAnswer;
                     fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-                    console.log(`🤖 [Auto-Learned] নতুন শেখা জোড়া: "${prevQuestion}" ➔ "${currentAnswer}"`);
+                    console.log(`🤖 [Auto-Learned] সেভ হয়েছে: "${prevQuestion}" ➔ "${currentAnswer}"`);
                 }
             }
 
-            // বর্তমান মেসেজের স্টেট সেভ রাখা (পরের মেসেজ শেখার জন্য)
             lastMessages[threadID] = {
-                text: cleanBody,
-                isQ: isQuestion(cleanBody),
+                text: cleanBodyLower,
+                isQ: isQuestion(cleanBodyLower),
                 senderID: senderID
             };
 
-            // 🟢 ২. ডাটাবেজে আগে থেকে শেখানো উত্তর থাকলে সরাসরি সেটি দেবে
-            if (db[cleanBody]) {
-                return sendHumanLikeMessage(api, db[cleanBody], threadID, event.messageID);
-            }
-
-            // 🟢 ৩. ম্যানুয়াল টিচিং সাপোর্ট
-            if (cleanBody.startsWith("teach ")) {
-                const inputContent = rawBody.slice(6).trim();
+            // 🟢 ২. ম্যানুয়াল টিচিং (teach প্রশ্ন = উত্তর)
+            if (cleanBodyLower.startsWith("teach ")) {
+                const inputContent = cleanBody.slice(6).trim();
                 const splitData = inputContent.split("=");
 
                 if (splitData.length >= 2) {
-                    const question = removeMentions(splitData[0]).toLowerCase().trim();
+                    const question = splitData[0].toLowerCase().trim();
                     const answer = splitData.slice(1).join("=").trim();
 
                     if (question && answer) {
@@ -114,6 +138,16 @@ login({ appState }, (err, api) => {
                         return sendHumanLikeMessage(api, `✅ সেভ করে নিলাম ভাই!\n\nপ্রশ্ন: ${question}\nউত্তর: ${answer}`, threadID, event.messageID);
                     }
                 }
+            }
+
+            // 🟢 ৩. ডাটাবেজ থেকে ম্যাচড উত্তর থাকলে রিপ্লাই দেবে
+            if (db[cleanBodyLower]) {
+                return sendHumanLikeMessage(api, db[cleanBodyLower], threadID, event.messageID);
+            }
+
+            // 🟢 ৪. যদি শুধু Prefix দিয়ে কল করা হয় (যেমন: @M Tusher Khan)
+            if (isPrefixed && !cleanBodyLower) {
+                return sendHumanLikeMessage(api, "হ্যাঁ ভাই, ডাকছিলেন? কিছু বলবেন?", threadID, event.messageID);
             }
         }
     });
