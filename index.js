@@ -30,14 +30,12 @@ function removeMentions(text) {
     return text.replace(/@[^\s]+/g, '').trim();
 }
 
-// 🎭 নিরাপদ মেসেজ সেন্ড ফাংশন (গিটহাবে ক্র্যাশ রোধে নিরাপদ টাইপিং)
-function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID = null, mentions = []) {
+// 🎭 ১০০% নিরাপদ মেসেজ সেন্ড ফাংশন (callback error fixed)
+function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID = null) {
     try {
-        api.sendMessage({ body: messageText, mentions: mentions }, threadID, replyToMessageID, (err) => {
-            if (err) console.log("❌ Message Send Error:", err.message || err);
-        });
+        api.sendMessage(messageText, threadID, replyToMessageID);
     } catch (e) {
-        console.log("❌ Catch Send Error:", e.message);
+        console.log("❌ Catch Send Error:", e.message || e);
     }
 }
 
