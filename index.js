@@ -13,6 +13,9 @@ const config = {
 
 const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
 
+// ইভেন্ট ফাইল লোড করা (Welcome & Leave)
+const welcomeLeaveEvent = require('./scripts/events/welcomeLeave.js');
+
 process.on('unhandledRejection', (reason) => console.log('⚠️ Ignored:', reason?.message || reason));
 process.on('uncaughtException', (err) => console.log('⚠️ Ignored:', err?.message || err));
 
@@ -43,7 +46,7 @@ function isQuestion(text) {
     return qKeywords.some(word => text.includes(word));
 }
 
-console.log("🔄 Auto-Learning Bot (Fixed Prefix & Cmds) চালুর প্রস্তুতি...");
+console.log("🔄 Tusher AI Bot (Message + Event Support) চালু হচ্ছে...");
 
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ:", err);
@@ -52,7 +55,7 @@ login({ appState }, (err, api) => {
     console.log(`✅ Smart Bot Active! ID: ${botID}`);
 
     api.setOptions({
-        listenEvents: true,
+        listenEvents: true, // ইভেন্ট শোনার জন্য এটি true থাকা জরুরি
         selfListen: false,
         autoMarkRead: true,
         updatePresence: true,
@@ -63,6 +66,17 @@ login({ appState }, (err, api) => {
     api.listenMqtt((listenErr, event) => {
         if (listenErr) return;
 
+        // ১. ইভেন্ট হ্যান্ডলার (Welcome & Leave Event)
+        if (event.type === "event") {
+            try {
+                welcomeLeaveEvent.onEvent({ api, event });
+            } catch (e) {
+                console.log("❌ Event Execution Error:", e.message || e);
+            }
+            return;
+        }
+
+        // ২. সাধারণ মেসেজ ও কমান্ড হ্যান্ডলার
         if (event.type === "message" || event.type === "message_reply") {
             const rawBody = event.body ? event.body.trim() : "";
             if (!rawBody) return;
