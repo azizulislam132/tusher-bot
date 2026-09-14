@@ -2,7 +2,6 @@ const login = require('mahmud-fca');
 const fs = require('fs');
 const path = require('path');
 
-// 📁 ডাটাবেজ ফাইল
 const dbPath = path.join(__dirname, 'database.json');
 if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({}, null, 2));
 
@@ -17,7 +16,6 @@ const appState = JSON.parse(fs.readFileSync('./appstate.json', 'utf8'));
 process.on('unhandledRejection', (reason) => console.log('⚠️ Ignored:', reason?.message || reason));
 process.on('uncaughtException', (err) => console.log('⚠️ Ignored:', err?.message || err));
 
-// 🚫 গালিগালাজ ফিল্টার লিস্ট
 const badWords = ["গালি১", "গালি২", "খানকি", "মাদারচোদ", "চুদ", "বোকাচোদা", "বাল"];
 
 function containsBadWords(text) {
@@ -30,7 +28,6 @@ function removeMentions(text) {
     return text.replace(/@[^\s]+/g, '').trim();
 }
 
-// 🎭 ১০০% নিরাপদ মেসেজ সেন্ড ফাংশন (callback error fixed)
 function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID = null) {
     try {
         api.sendMessage(messageText, threadID, replyToMessageID);
@@ -39,10 +36,8 @@ function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID = nul
     }
 }
 
-// 🧠 মেমোরি ক্যাশ
 const lastMessages = {};
 
-// 🧠 প্রশ্ন ডিটেকশন
 function isQuestion(text) {
     const qKeywords = ["কী", "কি", "কার", "কেন", "কেনো", "কী জন্য", "কি জন্য", "কখন", "কোথায়", "কীভাবে", "আছিস", "আছো", "টাকা", "আছস", "আসেন"];
     return qKeywords.some(word => text.includes(word));
@@ -80,7 +75,6 @@ login({ appState }, (err, api) => {
             const lowerBody = rawBody.toLowerCase();
             const lowerPrefix = config.prefix.toLowerCase();
 
-            // 📌 Check if the bot is mentioned or prefixed
             const isPrefixed = lowerBody.startsWith(lowerPrefix) || (event.mentions && Object.keys(event.mentions).includes(botID));
 
             let cleanBody = rawBody;
@@ -91,14 +85,12 @@ login({ appState }, (err, api) => {
             }
             const cleanBodyLower = cleanBody.toLowerCase();
 
-            // 🟢 ১. শুধু '/' কমান্ড দিলে যে রেসপন্স মেসেজ পাঠাবে
             if (cleanBodyLower === "/") {
                 const slashMsg = `🤖 Hello! I am ${config.botName}.\n\n` +
                                  `মেসেজ পাঠানোর জন্য /help লিখে সার্চ করুন অথবা সরাসরি আমার সাথে কথা বলতে প্রশ্ন করুন।`;
                 return sendHumanLikeMessage(api, slashMsg, threadID, event.messageID);
             }
 
-            // 🟢 ২. '/help' কমান্ড দিলে সাহায্যকারী মেসেজ পাঠাবে
             if (cleanBodyLower === "/help" || cleanBodyLower === "help") {
                 const helpMsg = `📖 **${config.botName} - Help Menu** 📖\n` +
                                 `-----------------------------------\n` +
@@ -110,7 +102,6 @@ login({ appState }, (err, api) => {
                 return sendHumanLikeMessage(api, helpMsg, threadID, event.messageID);
             }
 
-            // 🛡️ গালি দিলে ফিল্টার
             if (containsBadWords(rawBody)) {
                 const roastReplies = [
                     "মুখটা একটু ভালো কর ভাই, সভ্য সমাজে আছিস!",
@@ -120,7 +111,6 @@ login({ appState }, (err, api) => {
                 return sendHumanLikeMessage(api, roastReplies[Math.floor(Math.random() * roastReplies.length)], threadID, event.messageID);
             }
 
-            // 🟢 ৩. অটো-লার্নিং (গালি ছাড়া সেভ হবে)
             if (lastMessages[threadID] && lastMessages[threadID].isQ && lastMessages[threadID].senderID !== senderID) {
                 const prevQuestion = lastMessages[threadID].text;
                 const currentAnswer = rawBody;
@@ -138,7 +128,6 @@ login({ appState }, (err, api) => {
                 senderID: senderID
             };
 
-            // 🟢 ৪. ম্যানুয়াল টিচিং (teach প্রশ্ন = উত্তর)
             if (cleanBodyLower.startsWith("teach ")) {
                 const inputContent = cleanBody.slice(6).trim();
                 const splitData = inputContent.split("=");
@@ -155,12 +144,10 @@ login({ appState }, (err, api) => {
                 }
             }
 
-            // 🟢 ৫. ডাটাবেজ থেকে ম্যাচড উত্তর থাকলে রিপ্লাই দেবে
             if (db[cleanBodyLower]) {
                 return sendHumanLikeMessage(api, db[cleanBodyLower], threadID, event.messageID);
             }
 
-            // 🟢 ৬. যদি শুধু Prefix দিয়ে কল করা হয় (যেমন: @M Tusher Khan)
             if (isPrefixed && !cleanBodyLower) {
                 return sendHumanLikeMessage(api, "হ্যাঁ ভাই, ডাকছিলেন? কিছু বলবেন?", threadID, event.messageID);
             }
