@@ -1,7 +1,7 @@
 const login = require('mahmud-fca');
 const fs = require('fs');
 const path = require('path');
-
+const handleCommand = require('./handle/handleCommand.js');
 const dbPath = path.join(__dirname, 'database.json');
 if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({}, null, 2));
 
@@ -65,6 +65,14 @@ login({ appState }, (err, api) => {
 
     api.listenMqtt((listenErr, event) => {
         if (listenErr) return;
+
+	if (event.type === "message" || event.type === "message_reply") {
+    // ১. হ্যান্ডলার আগে চেক করবে এটা কোনো কমান্ড কি না (/cmd, /ping, /help ইত্যাদি)
+    const isCmdExecuted = handleCommand({ api, event });
+    if (isCmdExecuted) return; // কমান্ড হলে এখানেই থেমে যাবে, অটো-লার্নিংয়ে যাবে না
+
+    // বাকি সব সাধারণ মেসেজ ও অটো-লার্নিং কোড নিচে থাকবে...
+}
 
         // ১. ইভেন্ট হ্যান্ডলার (Welcome & Leave Event)
         if (event.type === "event") {
