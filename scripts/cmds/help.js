@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+
 module.exports = {
     config: {
         name: "help",
@@ -14,20 +17,36 @@ module.exports = {
     onStart: async function ({ api, event, args }) {
         const { threadID, messageID } = event;
 
-        const helpText = 
+        try {
+            // scripts/cmds ফোল্ডারের সঠিক পাথ
+            const cmdsPath = path.join(process.cwd(), 'scripts', 'cmds');
+            let commandFiles = [];
+
+            if (fs.existsSync(cmdsPath)) {
+                commandFiles = fs.readdirSync(cmdsPath).filter(file => file.endsWith('.js'));
+            }
+
+            // কমান্ড তালিকা তৈরি
+            const cmdList = commandFiles.map(file => `🔹 /${file.replace('.js', '')}`);
+
+            const helpText = 
 `📖 **Tusher AI - Help Menu** 📖
 -----------------------------------
-🔹 **/help** - বটের সাহায্যের মেনু দেখার জন্য।
-🔹 **teach প্রশ্ন = উত্তর** - বটকে নতুন নতুন কথা বা প্রশ্নের উত্তর শেখানোর জন্য।
-🔹 **গালিগালাজ নিষেধ** - বট খারাপ শব্দ ফ্লিটার করে অটো-রিপ্লাই দেবে।
+🤖 **উপলব্ধ কমান্ড তালিকা (${cmdList.length}টি):**
+
+${cmdList.length > 0 ? cmdList.join('\n') : "❌ কোনো কমান্ড ফাইল পাওয়া যায়নি!"}
+
+-----------------------------------
+💡 **কথা শেখানোর নিয়ম:**
+• **teach প্রশ্ন = উত্তর** - বটকে নতুন প্রশ্নের উত্তর শেখানোর জন্য।
 
 💡 **কথা বলার নিয়ম:**
-বটকে ট্যাগ দিন (যেমন: @M Tusher Khan) অথবা বটের সাথে সাধারণ প্রশ্ন আকারে কথা বলুন। ডাটাবেজে উত্তর থাকলে বট সাথে সাথেই উত্তর দেবে!`;
+• বটকে ট্যাগ করে অথবা নাম ধরে যেকোনো প্রশ্ন করুন, বট অটো-রিপ্লাই দেবে!`;
 
-        try {
             return api.sendMessage(helpText, threadID, messageID);
         } catch (e) {
             console.log("❌ Help Cmd Error:", e.message || e);
+            return api.sendMessage("❌ হেল্প মেনু লোড করতে সমস্যা হয়েছে!", threadID, messageID);
         }
     }
 };
