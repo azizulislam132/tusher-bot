@@ -31,11 +31,30 @@ function removeMentions(text) {
     return text.replace(/@[^\s]+/g, '').trim();
 }
 
+/**
+ * মানুষের মতো টাইপিং ইফেক্ট দিয়ে মেসেজ পাঠানোর ফাংশন
+ */
 function sendHumanLikeMessage(api, messageText, threadID, replyToMessageID = null) {
+    if (!messageText) return;
+
     try {
-        api.sendMessage(messageText, threadID, replyToMessageID);
+        // ১. টাইপিং স্ট্যাটাস চালু করা
+        api.sendTypingIndicator(threadID, true, (err) => {
+            if (err) console.log("⚠️ Typing Indicator Error:", err.message || err);
+
+            // ২. লেখার সাইজ অনুযায়ী কিছুটা ডিলে (Delay) হিসেব করা (ন্যূনতম ১.৫ সেকেন্ড, সর্বোচ্চ ৪ সেকেন্ড)
+            const typingDuration = Math.min(Math.max(messageText.length * 40, 1500), 4000);
+
+            setTimeout(() => {
+                // ৩. টাইপিং অফ করে মেসেজ পাঠানো
+                api.sendTypingIndicator(threadID, false);
+                api.sendMessage(messageText, threadID, replyToMessageID);
+            }, typingDuration);
+        });
     } catch (e) {
         console.log("❌ Catch Send Error:", e.message || e);
+        // ব্যাকআপ হিসেবে সরাসরি পাঠানো যদি টাইপিং ডাইরেক্ট ফেইল করে
+        api.sendMessage(messageText, threadID, replyToMessageID);
     }
 }
 
@@ -46,7 +65,7 @@ function isQuestion(text) {
     return qKeywords.some(word => text.includes(word));
 }
 
-console.log("🔄 Tusher AI Bot (Message + Event Support) চালু হচ্ছে...");
+console.log("🔄 Tusher AI Bot (Human Typing Mode) চালু হচ্ছে...");
 
 login({ appState }, (err, api) => {
     if (err) return console.error("❌ লগইন ব্যর্থ:", err);
@@ -55,7 +74,7 @@ login({ appState }, (err, api) => {
     console.log(`✅ Smart Bot Active! ID: ${botID}`);
 
     api.setOptions({
-        listenEvents: true, // ইভেন্ট শোনার জন্য এটি true থাকা জরুরি
+        listenEvents: true,
         selfListen: false,
         autoMarkRead: true,
         updatePresence: true,
@@ -65,14 +84,6 @@ login({ appState }, (err, api) => {
 
     api.listenMqtt((listenErr, event) => {
         if (listenErr) return;
-
-	if (event.type === "message" || event.type === "message_reply") {
-    // ১. হ্যান্ডলার আগে চেক করবে এটা কোনো কমান্ড কি না (/cmd, /ping, /help ইত্যাদি)
-    const isCmdExecuted = handleCommand({ api, event });
-    if (isCmdExecuted) return; // কমান্ড হলে এখানেই থেমে যাবে, অটো-লার্নিংয়ে যাবে না
-
-    // বাকি সব সাধারণ মেসেজ ও অটো-লার্নিং কোড নিচে থাকবে...
-}
 
         // ১. ইভেন্ট হ্যান্ডলার (Welcome & Leave Event)
         if (event.type === "event") {
@@ -86,6 +97,11 @@ login({ appState }, (err, api) => {
 
         // ২. সাধারণ মেসেজ ও কমান্ড হ্যান্ডলার
         if (event.type === "message" || event.type === "message_reply") {
+            
+            // কমান্ড হ্যান্ডলার আগে চেক করবে
+            const isCmdExecuted = handleCommand({ api, event });
+            if (isCmdExecuted) return;
+
             const rawBody = event.body ? event.body.trim() : "";
             if (!rawBody) return;
 
